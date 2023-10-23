@@ -2,3 +2,4 @@
 build
 src/*.o
 src/*.exe
+.clang-format
