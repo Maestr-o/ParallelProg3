@@ -201,10 +201,10 @@ else
 endif
 
 program.o: program.cu
-	$(EXEC) $(NVCC) -Xcompiler "$(OPENMP_FLAGS)" $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
 program: program.o
-	$(EXEC) $(NVCC) -Xcompiler "$(OPENMP_FLAGS)" $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
+	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
 
 clean:
 	rm -f *.o
