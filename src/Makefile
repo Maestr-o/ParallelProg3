@@ -186,7 +186,7 @@ OPENMP_FLAGS=-fopenmp
 all: seq parallel
 
 seq: seq.o
-	@$(CC) $(CFLAGS) $(OPENMP_FLAGS) seq.o -o seq
+	@$(CC) $(CFLAGS) $(OPENMP_FLAGS) -lm seq.o -o seq
 
 seq.o: seq.c
 	@$(CC) $(CFLAGS) -std=c99 -c seq.c -o seq.o
@@ -201,10 +201,10 @@ else
 endif
 
 program.o: program.cu
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+	@$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
 program: program.o
-	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
+	@$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -Xcompiler "$(OPENMP_FLAGS)" -lm -o $@ $+ $(LIBRARIES)
 
 clean:
-	rm -f *.o
+	@rm -f *.o
