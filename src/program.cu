@@ -1,13 +1,27 @@
 ﻿#include <stdio.h>
+#include <stdlib.h>
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
-void calc(long n, int num_blocks, int num_threads);
-bool is_prime_between_pairs(long x, long y, int num_blocks, int num_threads);
-bool is_prime(bool *flags, long current_prime);
-bool *cuda_run(long current_prime, int num_blocks, int num_threads);
-__global__ void is_prime_unit(long *num, bool *flags);
+#define CUDA_CHECK_MALLOC if (cudaStatus != cudaSuccess) {\
+  fprintf(stderr, "cudaMalloc failed: %s\n", cudaGetErrorString(cudaStatus));\
+  return;\
+}
+
+#define CUDA_CHECK_MEMCPY if (cudaStatus != cudaSuccess) {\
+  fprintf(stderr, "cudaMemcpy failed: %s\n", cudaGetErrorString(cudaStatus));\
+  return;\
+}
+
+#define CUDA_CHECK_KERNEL if (cudaStatus != cudaSuccess) {\
+  fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));\
+  return;\
+}
+
+void calc(int n, int num_blocks, int num_threads);
+int* load_primes_from_file(const char* filename, int* size);
+__global__ void kernel(int* primes, int* size, int* res, int* n);
 
 int main() {
   cudaDeviceProp prop;
@@ -27,78 +41,116 @@ int main() {
   return 0;
 }
 
-void calc(long n, int num_blocks, int num_threads) {
-  long last_pair_x = 2, last_pair_y = 3;
-  long prev_prime = 5, current_prime = 7;
-  long middle = 6, last_middle = 2;
+void calc(int n, int num_blocks, int num_threads) {
+  cudaError_t cudaStatus;
+  int size;
+  int* primes = load_primes_from_file("primes.txt", &size);
+  int* dev_primes;
+  int* dev_size;
+  int* dev_res;
+  int* dev_n;
+  int* res = (int*)calloc(size, sizeof(int));
+  if (res == NULL) {
+    printf("Error allocate memory\n");
+    return;
+  }
 
-  while (true) {
-    bool *flags = cuda_run(current_prime, num_blocks, num_threads);
-    if (is_prime(flags, current_prime)) {
-      if (current_prime - prev_prime == 2) {
-        if (prev_prime != last_pair_y) {
-          middle = (current_prime + prev_prime) / 2;
-          if (middle - last_middle > n &&
-              !is_prime_between_pairs(last_pair_y, prev_prime, num_blocks,
-                                      num_threads)) {
-            printf(
-                "Pair 1: %ld, %ld (mid: %ld)\nPair 2: %ld, %ld (mid: %ld)\n%ld "
-                "> %ld\n",
-                last_pair_x, last_pair_y, last_middle, prev_prime,
-                current_prime, middle, middle - last_middle, n);
-            free(flags);
-            break;
-          }
-          last_middle = middle;
-          last_pair_x = prev_prime;
-          last_pair_y = current_prime;
-        }
+  cudaStatus = cudaMalloc((void**)&dev_n, sizeof(int));
+  CUDA_CHECK_MALLOC
+  cudaStatus = cudaMemcpy(dev_n, &n, sizeof(int), cudaMemcpyHostToDevice);
+  CUDA_CHECK_MEMCPY
+  
+  cudaStatus = cudaMalloc((void**)&dev_size, sizeof(int));
+  CUDA_CHECK_MALLOC
+  cudaStatus = cudaMemcpy(dev_size, &size, sizeof(int), cudaMemcpyHostToDevice);
+  CUDA_CHECK_MEMCPY
+
+  cudaStatus = cudaMalloc((void**)&dev_primes, sizeof(int) * size);
+  CUDA_CHECK_MALLOC
+  cudaStatus = cudaMemcpy(dev_primes, primes, sizeof(int) * size,
+                          cudaMemcpyHostToDevice);
+  CUDA_CHECK_MEMCPY
+
+  cudaStatus = cudaMalloc((void**)&dev_res, sizeof(int) * size);
+  CUDA_CHECK_MALLOC
+
+  kernel<<<num_blocks, num_threads>>>(dev_primes, dev_size, dev_res, dev_n);
+  CUDA_CHECK_KERNEL
+
+  cudaStatus = cudaMemcpy(res, dev_res, sizeof(int) * size,
+                          cudaMemcpyDeviceToHost);
+  CUDA_CHECK_MEMCPY
+
+  for (int i = 0; i < size; i++) {
+    if (res[i] > n) {
+      printf(
+          "Pair 1: %d, %d (mid: %d)\nPair 2: %d, %d (mid: %d)\nDiff: %d\n", primes[i],
+             primes[i + 1], (primes[i + 1] + primes[i]) / 2, primes[i + 2],
+             primes[i + 3], (primes[i + 3] + primes[i + 2]) / 2, res[i]);
+      break;
+    }
+  }
+
+  cudaFree(dev_res);
+  cudaFree(dev_primes);
+  cudaFree(dev_size);
+  cudaFree(dev_n);
+}
+
+int* load_primes_from_file(const char* filename, int* size) {
+  FILE* file = fopen(filename, "r");
+  if (file == NULL) {
+    perror("Error opening file");
+    return NULL;
+  }
+
+  int capacity = 10;
+  int* primes = (int*)malloc(sizeof(int) * capacity);
+  if (primes == NULL) {
+    perror("Memory allocation error");
+    fclose(file);
+    return NULL;
+  }
+
+  int count = 0;
+  int num;
+
+  while (fscanf(file, "%d", &num) == 1) {
+    if (count == capacity) {
+      capacity *= 2;
+      int* new_primes = (int*)realloc(primes, sizeof(int) * capacity);
+      if (new_primes == NULL) {
+        perror("Memory reallocation error");
+        free(primes);
+        fclose(file);
+        return NULL;
       }
-      prev_prime = current_prime;
+      primes = new_primes;
     }
-    current_prime++;
-    free(flags);
+    primes[count++] = num;
   }
-}
 
-bool* cuda_run(long current_prime, int num_blocks, int num_threads) {
-  long *dev_current_prime;
-  bool *flags = (bool *)calloc(current_prime, sizeof(bool));
-  bool *dev_flags;
-  cudaMalloc((void **)&dev_current_prime, sizeof(long));
-  cudaMemcpy(dev_current_prime, &current_prime, sizeof(long),
-             cudaMemcpyHostToDevice);
-  cudaMalloc((void **)&dev_flags, sizeof(bool) * current_prime);
-  is_prime_unit<<<num_blocks, num_threads>>>(dev_current_prime, dev_flags);
-  cudaMemcpy(flags, dev_flags, sizeof(bool) * current_prime,
-             cudaMemcpyDeviceToHost);
-  cudaFree(dev_current_prime);
-  cudaFree(dev_flags);
-  return flags;
-}
+  fclose(file);
 
-bool is_prime(bool *flags, long current_prime) {
-  for (int i = 2; i < current_prime; i++) {
-    if (flags[i]) return false;
+  int* resized_primes = (int*)realloc(primes, sizeof(int) * count);
+  if (resized_primes == NULL) {
+    perror("Memory reallocation error");
+    free(primes);
+    return NULL;
   }
-  return true;
+
+  *size = count;
+  return resized_primes;
 }
 
-__global__ void is_prime_unit(long *num, bool *flags) {
+__global__ void kernel(int* primes, int* size, int* res, int* n) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  if (tid < 2) return;
-  if (*num % tid != 0) return;
-  flags[tid] = true;
-}
-
-bool is_prime_between_pairs(long x, long y, int num_blocks, int num_threads) {
-  for (long current_prime = x + 1; current_prime < y; current_prime++) {
-    bool *flags = cuda_run(current_prime, num_blocks, num_threads);
-    if (is_prime(flags, current_prime)) {
-      free(flags);
-      return true;
-    }
-    free(flags);
+  if (tid > *size - 3) return;
+  int diff = (primes[tid + 3] + primes[tid + 2]) / 2 -
+      (primes[tid + 1] + primes[tid]) / 2;
+  if (primes[tid + 3] - primes[tid + 2] == 2 &&
+      primes[tid + 1] - primes[tid] == 2 &&
+      (diff > *n)) {
+    res[tid] = diff;
   }
-  return false;
 }

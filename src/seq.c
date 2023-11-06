@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 void run();
 bool is_prime(long num);
@@ -53,8 +54,7 @@ void calc(long n) {
 bool is_prime(long num) {
     if (num < 2)
         return false;
-    long i;
-    for (i = 2; i * 2 <= num; i++) {
+    for (long i = 2; i <= sqrt(num); i++) {
         if (num % i == 0)
             return false;
     }
