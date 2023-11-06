@@ -19,14 +19,11 @@
   return;\
 }
 
-void calc(int n, int num_blocks, int num_threads);
+void calc(int n);
 int* load_primes_from_file(const char* filename, int* size);
 __global__ void kernel(int* primes, int* size, int* res, int* n);
 
 int main() {
-  cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);
-
   int n;
   printf("Enter N: ");
   if (scanf("%d", &n) != 1) {
@@ -34,17 +31,32 @@ int main() {
     return 0;
   }
 
-  int num_threads = prop.maxThreadsPerBlock;
-  int num_blocks = (n + num_threads - 1) / num_threads;
+  cudaEvent_t start, stop;
+  float elapsedTime;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  cudaEventRecord(start, 0);
+  
+  calc(n);
 
-  calc(n, num_blocks, num_threads);
+  cudaEventRecord(stop, 0);
+  cudaEventSynchronize(stop);
+  cudaEventElapsedTime(&elapsedTime, start, stop);
+  printf("Elapsed time: %.3f\n", elapsedTime / 1000.0);
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
   return 0;
 }
 
-void calc(int n, int num_blocks, int num_threads) {
+void calc(int n) {
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, 0);
   cudaError_t cudaStatus;
   int size;
   int* primes = load_primes_from_file("primes.txt", &size);
+  int num_threads = prop.maxThreadsPerBlock;
+  int num_blocks = (size + num_threads - 1) / num_threads;
+
   int* dev_primes;
   int* dev_size;
   int* dev_res;
@@ -91,6 +103,7 @@ void calc(int n, int num_blocks, int num_threads) {
     }
   }
 
+  free(primes);
   cudaFree(dev_res);
   cudaFree(dev_primes);
   cudaFree(dev_size);
