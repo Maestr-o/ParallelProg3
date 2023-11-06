@@ -21,82 +21,91 @@
   return;\
 }
 
-void calc(int n);
-bool is_prime(int num);
-int* generate_primes(int N, int* length);
-__global__ void kernel(int* primes, int* size, int* res, int* n);
+void calc(long n_primes, long n);
+bool is_prime(long num);
+long* generate_primes(long N, long* length);
+__global__ void kernel(long* primes, long* size, long* res, long* n);
 
 int main() {
-  int n;
+  long n, n_primes;
   printf("Enter N: ");
   if (scanf("%d", &n) != 1) {
+    printf("Error\n");
+    return 0;
+  }
+  printf("Enter the maximum number of primes in array: ");
+  if (scanf("%d", &n_primes) != 1) {
     printf("Error\n");
     return 0;
   }
   
   clock_t start, end;
   start = clock();
-  calc(n);
+  calc(n_primes, n);
   end = clock();
-  printf("Parallel time: %.3f s", ((double)(end - start)) / CLOCKS_PER_SEC);
+  printf("Time: %.3f s", ((double)(end - start)) / CLOCKS_PER_SEC);
   return 0;
 }
 
-void calc(int n) {
+void calc(long n_primes, long n) {
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
   cudaError_t cudaStatus;
 
-  int size;
-  int* primes = generate_primes(pow(10, 7), &size);
-  int num_threads = prop.maxThreadsPerBlock;
-  int num_blocks = (size + num_threads - 1) / num_threads;
+  long size;
+  long* primes = generate_primes(n_primes, &size);
+  long num_threads = prop.maxThreadsPerBlock;
+  long num_blocks = (size + num_threads - 1) / num_threads;
 
-  int* dev_primes;
-  int* dev_size;
-  int* dev_res;
-  int* dev_n;
-  int* res = (int*)calloc(size, sizeof(int));
+  long* dev_primes;
+  long* dev_size;
+  long* dev_res;
+  long* dev_n;
+  long* res = (long*)calloc(size, sizeof(long));
   if (res == NULL) {
     printf("Error allocate memory\n");
     return;
   }
 
-  cudaStatus = cudaMalloc((void**)&dev_n, sizeof(int));
+  cudaStatus = cudaMalloc((void**)&dev_n, sizeof(long));
   CUDA_CHECK_MALLOC
-  cudaStatus = cudaMemcpy(dev_n, &n, sizeof(int), cudaMemcpyHostToDevice);
+  cudaStatus = cudaMemcpy(dev_n, &n, sizeof(long), cudaMemcpyHostToDevice);
   CUDA_CHECK_MEMCPY
   
-  cudaStatus = cudaMalloc((void**)&dev_size, sizeof(int));
+  cudaStatus = cudaMalloc((void**)&dev_size, sizeof(long));
   CUDA_CHECK_MALLOC
-  cudaStatus = cudaMemcpy(dev_size, &size, sizeof(int), cudaMemcpyHostToDevice);
+  cudaStatus = cudaMemcpy(dev_size, &size, sizeof(long), cudaMemcpyHostToDevice);
   CUDA_CHECK_MEMCPY
 
-  cudaStatus = cudaMalloc((void**)&dev_primes, sizeof(int) * size);
+  cudaStatus = cudaMalloc((void**)&dev_primes, sizeof(long) * size);
   CUDA_CHECK_MALLOC
-  cudaStatus = cudaMemcpy(dev_primes, primes, sizeof(int) * size,
+  cudaStatus = cudaMemcpy(dev_primes, primes, sizeof(long) * size,
                           cudaMemcpyHostToDevice);
   CUDA_CHECK_MEMCPY
 
-  cudaStatus = cudaMalloc((void**)&dev_res, sizeof(int) * size);
+  cudaStatus = cudaMalloc((void**)&dev_res, sizeof(long) * size);
   CUDA_CHECK_MALLOC
 
   kernel<<<num_blocks, num_threads>>>(dev_primes, dev_size, dev_res, dev_n);
   CUDA_CHECK_KERNEL
 
-  cudaStatus = cudaMemcpy(res, dev_res, sizeof(int) * size,
+  cudaStatus = cudaMemcpy(res, dev_res, sizeof(long) * size,
                           cudaMemcpyDeviceToHost);
   CUDA_CHECK_MEMCPY
 
-  for (int i = 0; i < size; i++) {
+  bool is_answer_found = false;
+  for (long i = 0; i < size; i++) {
     if (res[i] > n) {
       printf(
           "Pair 1: %d, %d (mid: %d)\nPair 2: %d, %d (mid: %d)\nDiff: %d\n", primes[i],
              primes[i + 1], (primes[i + 1] + primes[i]) / 2, primes[i + 2],
              primes[i + 3], (primes[i + 3] + primes[i + 2]) / 2, res[i]);
+      is_answer_found = true;
       break;
     }
   }
+  if (!is_answer_found)
+    printf("Answer wasn't found. Please increase the maximum number of primes\n");
 
   free(primes);
   cudaFree(dev_res);
@@ -105,10 +114,10 @@ void calc(int n) {
   cudaFree(dev_n);
 }
 
-__global__ void kernel(int* primes, int* size, int* res, int* n) {
-  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void kernel(long* primes, long* size, long* res, long* n) {
+  long tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid > *size - 3) return;
-  int diff = (primes[tid + 3] + primes[tid + 2]) / 2 -
+  long diff = (primes[tid + 3] + primes[tid + 2]) / 2 -
       (primes[tid + 1] + primes[tid]) / 2;
   if (primes[tid + 3] - primes[tid + 2] == 2 &&
       primes[tid + 1] - primes[tid] == 2 &&
@@ -117,24 +126,24 @@ __global__ void kernel(int* primes, int* size, int* res, int* n) {
   }
 }
 
-bool is_prime(int num) {
+bool is_prime(long num) {
   if (num < 2) return false;
   if (num == 2) return true;
   if (num % 2 == 0) return false;
-  for (int i = 3; i * i <= num; i += 2) {
+  for (long i = 3; i * i <= num; i += 2) {
     if (num % i == 0) return false;
   }
   return true;
 }
 
-int* generate_primes(int N, int* length) {
-  int* primes = (int*)malloc(sizeof(int));
+long* generate_primes(long N, long* length) {
+  long* primes = (long*)malloc(sizeof(long));
   *length = 0;
 
-  for (int i = 2; i <= N; i++) {
+  for (long i = 2; i <= N; i++) {
     if (is_prime(i)) {
       (*length)++;
-      primes = (int*)realloc(primes, sizeof(int) * (*length));
+      primes = (long*)realloc(primes, sizeof(long) * (*length));
       primes[(*length) - 1] = i;
     }
   }
