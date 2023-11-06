@@ -1,5 +1,7 @@
 ﻿#include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+#include <math.h>
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -20,7 +22,8 @@
 }
 
 void calc(int n);
-int* load_primes_from_file(const char* filename, int* size);
+bool is_prime(int num);
+int* generate_primes(int N, int* length);
 __global__ void kernel(int* primes, int* size, int* res, int* n);
 
 int main() {
@@ -30,21 +33,12 @@ int main() {
     printf("Error\n");
     return 0;
   }
-
-  cudaEvent_t start, stop;
-  float elapsedTime;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  cudaEventRecord(start, 0);
   
+  clock_t start, end;
+  start = clock();
   calc(n);
-
-  cudaEventRecord(stop, 0);
-  cudaEventSynchronize(stop);
-  cudaEventElapsedTime(&elapsedTime, start, stop);
-  printf("Elapsed time: %.3f\n", elapsedTime / 1000.0);
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
+  end = clock();
+  printf("Parallel time: %.3f s", ((double)(end - start)) / CLOCKS_PER_SEC);
   return 0;
 }
 
@@ -52,8 +46,9 @@ void calc(int n) {
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
   cudaError_t cudaStatus;
+
   int size;
-  int* primes = load_primes_from_file("primes.txt", &size);
+  int* primes = generate_primes(pow(10, 7), &size);
   int num_threads = prop.maxThreadsPerBlock;
   int num_blocks = (size + num_threads - 1) / num_threads;
 
@@ -110,52 +105,6 @@ void calc(int n) {
   cudaFree(dev_n);
 }
 
-int* load_primes_from_file(const char* filename, int* size) {
-  FILE* file = fopen(filename, "r");
-  if (file == NULL) {
-    perror("Error opening file");
-    return NULL;
-  }
-
-  int capacity = 10;
-  int* primes = (int*)malloc(sizeof(int) * capacity);
-  if (primes == NULL) {
-    perror("Memory allocation error");
-    fclose(file);
-    return NULL;
-  }
-
-  int count = 0;
-  int num;
-
-  while (fscanf(file, "%d", &num) == 1) {
-    if (count == capacity) {
-      capacity *= 2;
-      int* new_primes = (int*)realloc(primes, sizeof(int) * capacity);
-      if (new_primes == NULL) {
-        perror("Memory reallocation error");
-        free(primes);
-        fclose(file);
-        return NULL;
-      }
-      primes = new_primes;
-    }
-    primes[count++] = num;
-  }
-
-  fclose(file);
-
-  int* resized_primes = (int*)realloc(primes, sizeof(int) * count);
-  if (resized_primes == NULL) {
-    perror("Memory reallocation error");
-    free(primes);
-    return NULL;
-  }
-
-  *size = count;
-  return resized_primes;
-}
-
 __global__ void kernel(int* primes, int* size, int* res, int* n) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid > *size - 3) return;
@@ -166,4 +115,29 @@ __global__ void kernel(int* primes, int* size, int* res, int* n) {
       (diff > *n)) {
     res[tid] = diff;
   }
+}
+
+bool is_prime(int num) {
+  if (num < 2) return false;
+  if (num == 2) return true;
+  if (num % 2 == 0) return false;
+  for (int i = 3; i * i <= num; i += 2) {
+    if (num % i == 0) return false;
+  }
+  return true;
+}
+
+int* generate_primes(int N, int* length) {
+  int* primes = (int*)malloc(sizeof(int));
+  *length = 0;
+
+  for (int i = 2; i <= N; i++) {
+    if (is_prime(i)) {
+      (*length)++;
+      primes = (int*)realloc(primes, sizeof(int) * (*length));
+      primes[(*length) - 1] = i;
+    }
+  }
+
+  return primes;
 }
