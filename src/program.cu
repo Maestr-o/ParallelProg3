@@ -1,7 +1,7 @@
 ﻿#include <stdio.h>
 #include <math.h>
-#include <stdlib.h>
 #include <omp.h>
+#include <stdlib.h>
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -39,7 +39,7 @@ int main() {
     printf("Error\n");
     return 0;
   }
-  printf("Enter the maximum number of primes in array: ");
+  printf("Enter the maximum prime: ");
   if (scanf("%d", &n_primes) != 1) {
     printf("Error\n");
     return 0;
@@ -80,8 +80,7 @@ void calc(int n_primes, int n) {
 
   cudaStatus = cudaMalloc((void**)&dev_size, sizeof(int));
   CUDA_CHECK_MALLOC
-  cudaStatus =
-      cudaMemcpy(dev_size, &size, sizeof(int), cudaMemcpyHostToDevice);
+  cudaStatus = cudaMemcpy(dev_size, &size, sizeof(int), cudaMemcpyHostToDevice);
   CUDA_CHECK_MEMCPY
 
   cudaStatus = cudaMalloc((void**)&dev_primes, sizeof(int) * size);
@@ -103,11 +102,12 @@ void calc(int n_primes, int n) {
   bool is_answer_found = false;
   for (int i = 0; i < size; i++) {
     if (res[i] > n) {
-      if (primes[i] > 0 && primes[i + 1] > 0 && primes[i + 2] > 0 && primes[i + 3] > 0) {
+      if (primes[i] > 0 && primes[i + 1] > 0 && primes[i + 2] > 0 &&
+          primes[i + 3] > 0) {
         printf("Pair 1: %d, %d (mid: %d)\nPair 2: %d, %d (mid: %d)\nDiff: %d\n",
-             primes[i], primes[i + 1], (primes[i + 1] + primes[i]) / 2,
-             primes[i + 2], primes[i + 3], (primes[i + 3] + primes[i + 2]) / 2,
-             res[i]);
+               primes[i], primes[i + 1], (primes[i + 1] + primes[i]) / 2,
+               primes[i + 2], primes[i + 3],
+               (primes[i + 3] + primes[i + 2]) / 2, res[i]);
         is_answer_found = true;
         break;
       } else
@@ -115,8 +115,7 @@ void calc(int n_primes, int n) {
     }
   }
   if (!is_answer_found)
-    printf(
-        "Answer wasn't found. Please increase the maximum number of primes\n");
+    printf("Answer wasn't found. Please increase the maximum prime\n");
 
   free(primes);
   cudaFree(dev_res);
@@ -129,7 +128,7 @@ __global__ void kernel(int* primes, int* size, int* res, int* n) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid > *size - 3) return;
   int diff = (primes[tid + 3] + primes[tid + 2]) / 2 -
-              (primes[tid + 1] + primes[tid]) / 2;
+             (primes[tid + 1] + primes[tid]) / 2;
   if (primes[tid + 3] - primes[tid + 2] == 2 &&
       primes[tid + 1] - primes[tid] == 2 && (diff > *n)) {
     res[tid] = diff;
